@@ -1,14 +1,10 @@
-import argparse
-import base64
-import json
-import os
 import time
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING
 
 from browser_use import AgentHistoryList
-from browser_use.agent.views import AgentOutput
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
 
 if TYPE_CHECKING:
     from run_browser_use import EvalResult
@@ -40,7 +36,7 @@ Result Response: <answer>
 async def auto_eval_by_gpt4o(
     history: AgentHistoryList,
     task: str,
-    openai_client: AzureChatOpenAI,
+    openai_client: AzureChatOpenAI | ChatAnthropic,
 ) -> tuple["EvalResult", str]:
     # print(f"--------------------- {process_dir} ---------------------")
 

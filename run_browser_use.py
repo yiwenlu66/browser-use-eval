@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import Generator, List, Literal, Set, TypedDict
 import argparse
 
-from browser_use import Agent, Browser, BrowserConfig, SystemPrompt
+from browser_use import Agent, Browser, BrowserConfig
 from browser_use.browser.context import BrowserContextConfig
 from dotenv import load_dotenv
+from langchain_anthropic import ChatAnthropic
 from langchain_openai import AzureChatOpenAI
 from pydantic import BaseModel, Field, SecretStr
 
@@ -154,61 +155,76 @@ class LLMModel:
     token_limit: int
 
 
-def get_llm_model_generator() -> Generator[AzureChatOpenAI, None, None]:
+def get_llm_model_generator(
+    model_provider: str,
+) -> Generator[AzureChatOpenAI | ChatAnthropic, None, None]:
     """Generator that creates fresh model instances each time"""
     while True:
         # Force reload environment variables
         load_dotenv(override=True)
 
-        # Create fresh instances each time, reading current env vars
-        west_eu = LLMModel(
-            model=AzureChatOpenAI(
-                model="gpt-4o",
-                api_version="2024-10-21",
-                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT_WEST_EU", ""),
-                api_key=SecretStr(os.getenv("AZURE_OPENAI_API_KEY_WEST_EU", "")),
-            ),
-            token_limit=900,
-        )
-        east_us = LLMModel(
-            model=AzureChatOpenAI(
-                model="gpt-4o",
-                api_version="2024-10-21",
-                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT_EAST_US", ""),
-                api_key=SecretStr(os.getenv("AZURE_OPENAI_API_KEY_EAST_US", "")),
-            ),
-            token_limit=450,
-        )
-        east_us_2 = LLMModel(
-            model=AzureChatOpenAI(
-                model="gpt-4o",
-                api_version="2024-10-21",
-                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT_EAST_US_2", ""),
-                api_key=SecretStr(os.getenv("AZURE_OPENAI_API_KEY_EAST_US_2", "")),
-            ),
-            token_limit=450,
-        )
-        west_us = LLMModel(
-            model=AzureChatOpenAI(
-                model="gpt-4o",
-                api_version="2024-10-21",
-                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT_WEST_US", ""),
-                api_key=SecretStr(os.getenv("AZURE_OPENAI_API_KEY_WEST_US", "")),
-            ),
-            token_limit=450,
-        )
+        if model_provider == "anthropic":
+            # Create fresh instances each time, reading current env vars
+            yield ChatAnthropic(
+                model_name="claude-3-5-sonnet-20240620",
+                timeout=25,
+                stop=None,
+                temperature=0.0,
+            )
 
-        # Yield fresh instances in the same pattern
-        yield west_eu.model  # First 900
-        yield west_eu.model  # Second 900
-        yield east_us.model  # 450
-        yield east_us_2.model  # 450
-        yield west_us.model  # 450
+        elif model_provider == "azure":
+            # Create fresh instances each time, reading current env vars
+            west_eu = LLMModel(
+                model=AzureChatOpenAI(
+                    model="gpt-4o",
+                    api_version="2024-10-21",
+                    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT_WEST_EU", ""),
+                    api_key=SecretStr(os.getenv("AZURE_OPENAI_API_KEY_WEST_EU", "")),
+                ),
+                token_limit=900,
+            )
+            east_us = LLMModel(
+                model=AzureChatOpenAI(
+                    model="gpt-4o",
+                    api_version="2024-10-21",
+                    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT_EAST_US", ""),
+                    api_key=SecretStr(os.getenv("AZURE_OPENAI_API_KEY_EAST_US", "")),
+                ),
+                token_limit=450,
+            )
+            east_us_2 = LLMModel(
+                model=AzureChatOpenAI(
+                    model="gpt-4o",
+                    api_version="2024-10-21",
+                    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT_EAST_US_2", ""),
+                    api_key=SecretStr(os.getenv("AZURE_OPENAI_API_KEY_EAST_US_2", "")),
+                ),
+                token_limit=450,
+            )
+            west_us = LLMModel(
+                model=AzureChatOpenAI(
+                    model="gpt-4o",
+                    api_version="2024-10-21",
+                    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT_WEST_US", ""),
+                    api_key=SecretStr(os.getenv("AZURE_OPENAI_API_KEY_WEST_US", "")),
+                ),
+                token_limit=450,
+            )
+
+            # Yield fresh instances in the same pattern
+            yield west_eu.model  # First 900
+            yield west_eu.model  # Second 900
+            yield east_us.model  # 450
+            yield east_us_2.model  # 450
+            yield west_us.model  # 450
+
+        else:
+            raise ValueError(f"Invalid model provider: {model_provider}")
 
 
 async def process_single_task(
     task: TaskData,
-    client: AzureChatOpenAI,
+    client: AzureChatOpenAI | ChatAnthropic,
     stats: RunStats,
     results_dir: Path,
     experiment_results: ExperimentResults,
@@ -266,7 +282,7 @@ async def process_single_task(
         await browser.close()
 
 
-async def main(max_concurrent_tasks: int) -> None:
+async def main(max_concurrent_tasks: int, model_provider: str) -> None:
     # Setup
     cleanup_webdriver_cache()
     semaphore = Semaphore(max_concurrent_tasks)
@@ -294,7 +310,9 @@ async def main(max_concurrent_tasks: int) -> None:
     results_dir.mkdir(parents=True, exist_ok=True)
 
     # Process tasks concurrently with semaphore
-    async def process_with_semaphore(task: TaskData, client: AzureChatOpenAI) -> None:
+    async def process_with_semaphore(
+        task: TaskData, client: AzureChatOpenAI | ChatAnthropic
+    ) -> None:
         async with semaphore:
             print(f"\n=== Now at task {task['id']} ===")
 
@@ -336,7 +354,7 @@ async def main(max_concurrent_tasks: int) -> None:
     # Create and run all tasks
     all_tasks = []
     for i, task in enumerate(tasks):
-        model = next(get_llm_model_generator())
+        model = next(get_llm_model_generator(model_provider))
         all_tasks.append(process_with_semaphore(task, model))
 
     await asyncio.gather(*all_tasks)
@@ -355,8 +373,15 @@ if __name__ == "__main__":
         default=3,
         help="Maximum number of concurrent tasks (default: 3)",
     )
+    parser.add_argument(
+        "--model-provider",
+        type=str,
+        default="azure",
+        help="Model provider (default: azure)",
+        choices=["azure", "anthropic"],
+    )
     args = parser.parse_args()
 
     logging.info(f"Running with {args.max_concurrent} concurrent tasks")
 
-    asyncio.run(main(args.max_concurrent))
+    asyncio.run(main(args.max_concurrent, args.model_provider))
