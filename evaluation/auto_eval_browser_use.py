@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from browser_use import AgentHistoryList
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import AzureChatOpenAI
 
 if TYPE_CHECKING:
@@ -36,7 +37,7 @@ Result Response: <answer>
 async def auto_eval_by_gpt4o(
     history: AgentHistoryList,
     task: str,
-    openai_client: AzureChatOpenAI | ChatAnthropic,
+    openai_client: AzureChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI,
 ) -> tuple["EvalResult", str]:
     # print(f"--------------------- {process_dir} ---------------------")
 

@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import json
 import logging
@@ -9,12 +10,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Generator, List, Literal, Set, TypedDict
-import argparse
 
 from browser_use import Agent, Browser, BrowserConfig
 from browser_use.browser.context import BrowserContextConfig
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import AzureChatOpenAI
 from pydantic import BaseModel, Field, SecretStr
 
@@ -49,7 +50,7 @@ class RunStats:
             self.unknown_tasks.add(task_id)
 
     def get_success_rate(self) -> str:
-        return f"{len(self.successful_tasks)}/{self.current_task}"
+        return f"{len(self.successful_tasks)}/{self.current_task}={len(self.successful_tasks) / self.current_task:.2f}"
 
     def print_periodic_summary(self) -> None:
         print("\n=== Task Summary ===")
@@ -217,7 +218,19 @@ def get_llm_model_generator(
             yield east_us.model  # 450
             yield east_us_2.model  # 450
             yield west_us.model  # 450
-
+        elif model_provider == "google/gemini-1.5-flash":
+            llm = ChatGoogleGenerativeAI(
+                model="gemini-1.5-flash",
+            )
+            yield llm
+        elif model_provider == "google/gemini-1.5-pro":
+            llm = ChatGoogleGenerativeAI(
+                model="gemini-1.5-pro",
+            )
+            yield llm
+        elif model_provider == "google/gemini-1.5-flash-8b":
+            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-8b")
+            yield llm
         else:
             raise ValueError(f"Invalid model provider: {model_provider}")
 
@@ -245,6 +258,7 @@ async def process_single_task(
                 llm=client,
                 browser=browser,
                 validate_output=True,
+                generate_gif=False,
             )
 
             history = await agent.run(max_steps=30)
@@ -278,6 +292,12 @@ async def process_single_task(
         experiment_results.total_success += int(eval_result == "success")
         experiment_results.total_failed += int(eval_result == "failed")
         experiment_results.total_unknown += int(eval_result == "unknown")
+        # save curent stats to file
+        # with open(file="results/examples-browser-use/aaa_stats.txt", mode="a") as f:
+        #     # in one line
+        #     f.write(f"{stats.current_task}\n")
+        #     f.write(f"{stats.get_success_rate()}\n")
+
     finally:
         await browser.close()
 
@@ -378,7 +398,13 @@ if __name__ == "__main__":
         type=str,
         default="azure",
         help="Model provider (default: azure)",
-        choices=["azure", "anthropic"],
+        choices=[
+            "azure",
+            "anthropic",
+            "google/gemini-1.5-flash",
+            "google/gemini-1.5-flash-8b",
+            "google/gemini-1.5-pro",
+        ],
     )
     args = parser.parse_args()
 
