@@ -50,6 +50,8 @@ class RunStats:
             self.unknown_tasks.add(task_id)
 
     def get_success_rate(self) -> str:
+        if self.current_task == 0:
+            return "0/0=0.00"
         return f"{len(self.successful_tasks)}/{self.current_task}={len(self.successful_tasks) / self.current_task:.2f}"
 
     def print_periodic_summary(self) -> None:
@@ -293,121 +295,145 @@ async def process_single_task(
         experiment_results.total_failed += int(eval_result == "failed")
         experiment_results.total_unknown += int(eval_result == "unknown")
         # save curent stats to file
+        print(f"Saving stats to file {stats.current_task} {stats.get_success_rate()}")
         # with open(file="results/examples-browser-use/aaa_stats.txt", mode="a") as f:
         #     # in one line
         #     f.write(f"{stats.current_task}\n")
         #     f.write(f"{stats.get_success_rate()}\n")
+
+    except Exception as e:
+        logging.error(f"Error processing task {task['id']}: {str(e)}")
+        stats.update(task["id"], "failed")  # Mark as failed instead of crashing
+        return
 
     finally:
         await browser.close()
 
 
 async def main(max_concurrent_tasks: int, model_provider: str) -> None:
-    # Setup
-    cleanup_webdriver_cache()
-    semaphore = Semaphore(max_concurrent_tasks)
+    try:
+        # Setup
+        cleanup_webdriver_cache()
+        semaphore = Semaphore(max_concurrent_tasks)
 
-    # Load tasks
-    tasks: List[TaskData] = []
-    with open("data/WebVoyager_data.jsonl", "r") as f:
-        for line in f:
-            tasks.append(json.loads(line))
+        # Load tasks
+        tasks: List[TaskData] = []
+        with open("data/WebVoyager_data.jsonl", "r") as f:
+            for line in f:
+                tasks.append(json.loads(line))
 
-    # remove impossible tasks
-    with open("data/WebVoyagerImpossibleTasks.json", "r") as f:
-        impossible_tasks = set(json.load(f))
-    tasks = [task for task in tasks if task["id"] not in impossible_tasks]
+        # remove impossible tasks
+        with open("data/WebVoyagerImpossibleTasks.json", "r") as f:
+            impossible_tasks = set(json.load(f))
+        tasks = [task for task in tasks if task["id"] not in impossible_tasks]
 
-    # randomize the order of tasks
-    random.seed(42)
-    random.shuffle(tasks)
+        # randomize the order of tasks
+        random.seed(42)
+        random.shuffle(tasks)
 
-    # Initialize
+        # Initialize
 
-    experiment_results = ExperimentResults()
-    stats = RunStats(total_tasks=len(tasks))
-    results_dir = Path("results/examples-browser-use")
-    results_dir.mkdir(parents=True, exist_ok=True)
+        experiment_results = ExperimentResults()
+        stats = RunStats(total_tasks=len(tasks))
+        results_dir = Path("results/examples-browser-use")
+        results_dir.mkdir(parents=True, exist_ok=True)
 
-    # Process tasks concurrently with semaphore
-    async def process_with_semaphore(
-        task: TaskData, client: AzureChatOpenAI | ChatAnthropic
-    ) -> None:
-        async with semaphore:
-            print(f"\n=== Now at task {task['id']} ===")
+        # Process tasks concurrently with semaphore
+        async def process_with_semaphore(
+            task: TaskData, client: AzureChatOpenAI | ChatAnthropic
+        ) -> None:
+            async with semaphore:
+                print(f"\n=== Now at task {task['id']} ===")
 
-            # Create browser instance inside the semaphore block
-            browser = Browser(
-                config=BrowserConfig(
-                    headless=True,
-                    disable_security=True,
-                    new_context_config=BrowserContextConfig(
+                # Create browser instance inside the semaphore block
+                browser = Browser(
+                    config=BrowserConfig(
+                        headless=True,
                         disable_security=True,
-                        wait_for_network_idle_page_load_time=5,
-                        maximum_wait_page_load_time=20,
-                        # no_viewport=True,
-                        browser_window_size={
-                            "width": 1280,
-                            "height": 1100,
-                        },
-                        # trace_path=str(results_dir / f"{task['id']}"),
-                    ),
+                        new_context_config=BrowserContextConfig(
+                            disable_security=True,
+                            wait_for_network_idle_page_load_time=5,
+                            maximum_wait_page_load_time=20,
+                            # no_viewport=True,
+                            browser_window_size={
+                                "width": 1280,
+                                "height": 1100,
+                            },
+                            # trace_path=str(results_dir / f"{task['id']}"),
+                        ),
+                    )
                 )
-            )
 
-            await process_single_task(
-                task,
-                client,
-                stats,
-                results_dir,
-                experiment_results,
-                browser,  # Pass browser instance
-            )
-            stats.current_task += 1
+                await process_single_task(
+                    task,
+                    client,
+                    stats,
+                    results_dir,
+                    experiment_results,
+                    browser,  # Pass browser instance
+                )
+                stats.current_task += 1
 
-            await browser.close()
+                # Add this to ensure browser is always closed
+                try:
+                    await browser.close()
+                except Exception as e:
+                    logging.error(f"Error closing browser: {e}")
 
-            # if stats.current_task % max_concurrent_tasks == 0:
-            stats.print_periodic_summary()
-            save_experiment_results(experiment_results)
+                print(f"Current task: {stats.current_task}")
+                print(f"Total tasks: {stats.total_tasks}")
+                print(f"Success rate: {stats.get_success_rate()}")
+                # if stats.current_task % max_concurrent_tasks == 0:
+                stats.print_periodic_summary()
+                save_experiment_results(experiment_results)
 
-    # Create and run all tasks
-    all_tasks = []
-    for i, task in enumerate(tasks):
-        model = next(get_llm_model_generator(model_provider))
-        all_tasks.append(process_with_semaphore(task, model))
+        # Create and run all tasks
+        all_tasks = []
+        for i, task in enumerate(tasks):
+            model = next(get_llm_model_generator(model_provider))
+            all_tasks.append(process_with_semaphore(task, model))
 
-    await asyncio.gather(*all_tasks)
-
-    # Final summary
-    stats.print_periodic_summary()
+        # Add timeout and better error handling
+        await asyncio.gather(*all_tasks, return_exceptions=True)
+    except Exception as e:
+        logging.error(f"Main loop error: {e}")
+    finally:
+        # Cleanup code here
+        logging.info("Shutting down...")
+        stats.print_periodic_summary()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Run browser tasks with concurrent execution"
-    )
-    parser.add_argument(
-        "--max-concurrent",
-        type=int,
-        default=3,
-        help="Maximum number of concurrent tasks (default: 3)",
-    )
-    parser.add_argument(
-        "--model-provider",
-        type=str,
-        default="azure",
-        help="Model provider (default: azure)",
-        choices=[
-            "azure",
-            "anthropic",
-            "google/gemini-1.5-flash",
-            "google/gemini-1.5-flash-8b",
-            "google/gemini-1.5-pro",
-        ],
-    )
-    args = parser.parse_args()
+    try:
+        parser = argparse.ArgumentParser(
+            description="Run browser tasks with concurrent execution"
+        )
+        parser.add_argument(
+            "--max-concurrent",
+            type=int,
+            default=3,
+            help="Maximum number of concurrent tasks (default: 3)",
+        )
+        parser.add_argument(
+            "--model-provider",
+            type=str,
+            default="azure",
+            help="Model provider (default: azure)",
+            choices=[
+                "azure",
+                "anthropic",
+                "google/gemini-1.5-flash",
+                "google/gemini-1.5-flash-8b",
+                "google/gemini-1.5-pro",
+            ],
+        )
+        args = parser.parse_args()
 
-    logging.info(f"Running with {args.max_concurrent} concurrent tasks")
+        logging.info(f"Running with {args.max_concurrent} concurrent tasks")
 
-    asyncio.run(main(args.max_concurrent, args.model_provider))
+        asyncio.run(main(args.max_concurrent, args.model_provider))
+    except KeyboardInterrupt:
+        print("\nReceived keyboard interrupt, shutting down...")
+    except Exception as e:
+        print(f"Fatal error: {e}")
+        logging.exception("Fatal error occurred")
