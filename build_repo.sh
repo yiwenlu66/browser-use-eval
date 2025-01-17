@@ -2,7 +2,7 @@
 
 # go to location of this script
 # cd $(dirname $0)
-# # remove browser-use folder if it exists
+# remove browser-use folder if it exists
 # rm -rf browser-use
 
 # Simple test script for browser-use Gemini branch
@@ -17,8 +17,10 @@ git checkout dev
 
 # Setup environment and build
 # echo "Setting up environment and building"
-uv venv
+cd ..
+uv venv --python=3.11
 source .venv/bin/activate
+cd browser-use
 uv pip install build 
 python -m build
 
@@ -34,6 +36,7 @@ playwright install
 # copy test.py to browser-use
 #echo "Copying test.py to browser-use"
 cd ..
+source .venv/bin/activate
 #cp test.py browser-use/test.py
 #cd browser-use
 
@@ -50,3 +53,5 @@ cd ..
 
 # c
 # i browser-use
+
+# a .venv
