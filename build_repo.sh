@@ -12,7 +12,7 @@ cd browser-use
 # git checkout hot-fix/default-not-permitted
 # checkout 1a5a4bd557a190dbc6a77985c46db383779ae4bf
 echo "Checking out branch"
-git checkout dev
+git checkout memory-state-extraction
 
 
 # Setup environment and build
