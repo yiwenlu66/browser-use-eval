@@ -9,3 +9,9 @@ venv/
 results/
 /results*
 gcp-login.json
+
+node_modules
+**.lock
+
+.DS_store
+browser-use-eval.txt
