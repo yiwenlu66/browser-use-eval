@@ -4,9 +4,10 @@
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
+    "dotenv": "^16.4.7",
     "fs": "^0.0.1-security",
     "path": "^0.12.7",
-    "playwright": "^1.50.0",
+    "playwright": "^1.50.1",
     "tsx": "^4.19.2"
   }
 }
