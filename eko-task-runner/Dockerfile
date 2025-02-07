@@ -41,7 +41,7 @@ RUN yarn link
 
 # Set up task runner
 WORKDIR /app/task-runner
-COPY package.json yarn.lock ./
+COPY package.json ./
 
 # Link to local Eko and install other dependencies
 RUN yarn link @eko-ai/eko

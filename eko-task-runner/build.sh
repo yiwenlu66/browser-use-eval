@@ -13,7 +13,7 @@ cp -r ../eko $BUILD_DIR/eko
 echo "Copying task runner files..."
 cp Dockerfile $BUILD_DIR/
 cp run.sh $BUILD_DIR/
-cp package.json yarn.lock main.ts $BUILD_DIR/
+cp package.json main.ts $BUILD_DIR/
 cp .dockerignore $BUILD_DIR/
 
 # Build the image
