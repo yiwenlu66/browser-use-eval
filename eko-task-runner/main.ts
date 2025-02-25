@@ -1,6 +1,8 @@
 import Eko from "@eko-ai/eko";
 import { tools as nodejsTools } from "@eko-ai/eko/nodejs";
 import { WorkflowParser, ExecutionLogger } from "@eko-ai/eko";
+import { WorkflowCallback } from "@eko-ai/eko/types";
+import { BrowserUse } from "@eko-ai/eko/nodejs"
 import { readFile, writeFile, mkdir, readdir } from "fs/promises";
 import { join } from "path";
 import * as dotenv from "dotenv";
@@ -101,6 +103,46 @@ async function saveWorkflowResults(result: any, startTime: Date) {
   }
 }
 
+// Create a callback that takes a screenshot at the end of workflow execution
+function createFinalScreenshotCallback(eko: Eko): WorkflowCallback {
+  return {
+    hooks: {
+      afterWorkflow: async (workflow, variables) => {
+        console.log("Taking final screenshot of workflow state...");
+
+        try {
+          // Use eko.callTool to execute the browser_use tool
+          const result = await eko.callTool('browser_use', {
+            action: 'screenshot_extract_element'
+          });
+
+          // Store the screenshot in workflow variables
+          if (result.success) {
+            variables.set('final_screenshot', result.image);
+            variables.set('final_elements', result.text);
+            console.log("✓ Final screenshot captured successfully");
+          } else {
+            console.error("Failed to capture final screenshot:", result.error);
+          }
+        } catch (error) {
+          console.error("Error capturing final screenshot:", error);
+        }
+      }
+    }
+  };
+}
+
+// Usage example:
+async function executeWorkflowWithScreenshot(eko, workflow) {
+  const screenshotCallback = await createFinalScreenshotCallback(eko);
+  const results = await workflow.execute(screenshotCallback);
+
+  // Access the final screenshot from workflow variables
+  const finalScreenshot = workflow.variables.get('final_screenshot');
+
+  return results;
+}
+
 async function main() {
   const startTime = new Date();
 
@@ -159,7 +201,7 @@ async function main() {
 
     // Execute workflow
     console.log('Executing workflow...');
-    const result = await eko.execute(workflow);
+    const result = await executeWorkflowWithScreenshot(eko, workflow);
 
     // Save results and exit
     await saveWorkflowResults(result, startTime);
