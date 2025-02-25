@@ -113,7 +113,7 @@ function createFinalScreenshotCallback(eko: Eko): WorkflowCallback {
         try {
           // Use eko.callTool to execute the browser_use tool
           const result = await eko.callTool('browser_use', {
-            action: 'screenshot_extract_element'
+            action: 'screenshot_no_extract_element'
           });
 
           // Store the screenshot in workflow variables
@@ -204,6 +204,7 @@ async function main() {
     const result = await executeWorkflowWithScreenshot(eko, workflow);
 
     // Save results and exit
+    await logger.saveDebugImage(workflow.variables.get('final_screenshot'), 'final_screenshot');
     await saveWorkflowResults(result, startTime);
     return 0;
 
